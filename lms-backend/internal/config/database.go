@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -15,12 +16,12 @@ import (
 // InitDatabase initializes the MySQL database connection
 func InitDatabase() (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=%s&parseTime=True&loc=Local",
-		getEnv("DB_USER", "root"),
-		getEnv("DB_PASSWORD", ""),
-		getEnv("DB_HOST", "localhost"),
-		getEnv("DB_PORT", "3306"),
-		getEnv("DB_NAME", "lms_rocket"),
-		getEnv("DB_CHARSET", "utf8mb4"),
+		GetEnv("DB_USER", "root"),
+		MustGetEnv("DB_PASSWORD"),
+		GetEnv("DB_HOST", "localhost"),
+		GetEnv("DB_PORT", "3306"),
+		GetEnv("DB_NAME", "lms_rocket"),
+		GetEnv("DB_CHARSET", "utf8mb4"),
 	)
 
 	config := &gorm.Config{
@@ -51,14 +52,14 @@ func InitDatabase() (*gorm.DB, error) {
 
 // InitRedis initializes the Redis client
 func InitRedis() *redis.Client {
-	host := getEnv("REDIS_HOST", "")
+	host := GetEnv("REDIS_HOST", "")
 	if host == "" {
 		return nil
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", host, getEnv("REDIS_PORT", "6379")),
-		Password: getEnv("REDIS_PASSWORD", ""),
+		Addr:     fmt.Sprintf("%s:%s", host, GetEnv("REDIS_PORT", "6379")),
+		Password: GetEnv("REDIS_PASSWORD", ""),
 		DB:       0,
 	})
 
@@ -67,17 +68,11 @@ func InitRedis() *redis.Client {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		log.Printf("redis connection failed: %v", err)
 		return nil
 	}
 
 	return client
-}
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 func createTimeoutContext(seconds int) (context.Context, context.CancelFunc) {

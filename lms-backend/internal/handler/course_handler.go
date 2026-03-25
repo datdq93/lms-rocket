@@ -78,7 +78,11 @@ type CreateCourseRequest struct {
 
 // CreateCourse creates a new course (teacher/admin only)
 func (h *CourseHandler) CreateCourse(c *gin.Context) {
-	userID, _ := c.Get("userID")
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 
 	var req CreateCourseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -2,45 +2,14 @@ package middleware
 
 import (
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"go.uber.org/zap"
 )
 
-// LoggerMiddleware logs HTTP requests
-func LoggerMiddleware(logger *zap.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		path := c.Request.URL.Path
-		raw := c.Request.URL.RawQuery
-
-		c.Next()
-
-		latency := time.Since(start)
-		clientIP := c.ClientIP()
-		method := c.Request.Method
-		statusCode := c.Writer.Status()
-
-		if raw != "" {
-			path = path + "?" + raw
-		}
-
-		logger.Info("HTTP Request",
-			zap.String("client_ip", clientIP),
-			zap.String("method", method),
-			zap.String("path", path),
-			zap.Int("status", statusCode),
-			zap.Duration("latency", latency),
-		)
-	}
-}
-
 // AuthMiddleware validates JWT tokens
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -64,7 +33,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, jwt.ErrSignatureInvalid
 			}
-			return []byte(os.Getenv("JWT_SECRET_KEY")), nil
+			return []byte(jwtSecret), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -80,43 +49,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.Set("role", claims["role"])
 		}
 
-		c.Next()
-	}
-}
-
-// RoleMiddleware checks if user has required role(s)
-func RoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		userRole, exists := c.Get("role")
-		if !exists {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
-			c.Abort()
-			return
-		}
-
-		role := userRole.(string)
-		for _, allowed := range allowedRoles {
-			if role == allowed {
-				c.Next()
-				return
-			}
-		}
-
-		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient permissions"})
-		c.Abort()
-	}
-}
-
-// ErrorHandler handles panics and errors
-func ErrorHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		defer func() {
-			if err := recover(); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Internal server error",
-				})
-			}
-		}()
 		c.Next()
 	}
 }

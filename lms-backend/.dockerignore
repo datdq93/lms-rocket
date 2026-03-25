@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+build/
+*.out
+*.exe
+
+# Go
+vendor/
+**/*.test
+
+# IDE/editor
+.idea/
+.vscode/
+.DS_Store
+
+# Git
+.git
+.gitignore
+
+# Env/config
+.env
+.env.*
+!.env.example
+!.env.docker.example
+.air.toml
+
+# Misc
+node_modules/

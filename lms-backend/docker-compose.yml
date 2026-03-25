@@ -8,18 +8,18 @@ services:
     container_name: lms-backend
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
       - APP_ENV=development
       - PORT=8080
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_NAME=lms_rocket
-      - DB_USER=root
-      - DB_PASSWORD=rootpassword
+      - DB_USER=lms_user
+      - DB_PASSWORD=lms_password
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET_KEY=your-256-bit-secret-key-for-development-only
-      - JWT_REFRESH_SECRET=another-256-bit-secret-for-refresh-tokens
     depends_on:
       mysql:
         condition: service_healthy

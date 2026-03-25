@@ -49,12 +49,15 @@ func main() {
 		sugar.Info("Redis connected successfully")
 	}
 
+	// Load JWT configuration
+	jwtConfig := config.LoadJWTConfig()
+
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	courseRepo := repository.NewCourseRepository(db)
 
 	// Initialize services
-	authService := service.NewAuthService(userRepo, redisClient)
+	authService := service.NewAuthService(userRepo, redisClient, jwtConfig)
 	userService := service.NewUserService(userRepo)
 	courseService := service.NewCourseService(courseRepo)
 
@@ -105,7 +108,7 @@ func main() {
 
 		// Protected routes
 		protected := api.Group("")
-		protected.Use(middleware.AuthMiddleware())
+		protected.Use(middleware.AuthMiddleware(jwtConfig.SecretKey))
 		{
 			// Auth
 			protected.POST("/auth/logout", authHandler.Logout)
@@ -124,7 +127,7 @@ func main() {
 
 		// Admin routes
 		admin := api.Group("/admin")
-		admin.Use(middleware.AuthMiddleware())
+		admin.Use(middleware.AuthMiddleware(jwtConfig.SecretKey))
 		admin.Use(middleware.RoleMiddleware("admin"))
 		{
 			admin.GET("/users", userHandler.ListUsers)
@@ -135,7 +138,7 @@ func main() {
 
 		// Teacher routes
 		teacher := api.Group("/teacher")
-		teacher.Use(middleware.AuthMiddleware())
+		teacher.Use(middleware.AuthMiddleware(jwtConfig.SecretKey))
 		teacher.Use(middleware.RoleMiddleware("teacher", "admin"))
 		{
 			teacher.POST("/courses", courseHandler.CreateCourse)
@@ -182,8 +185,12 @@ func main() {
 	}
 
 	// Close database connection
-	sqlDB, _ := db.DB()
-	sqlDB.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		sugar.Errorw("Failed to get underlying sql.DB", "error", err)
+	} else {
+		sqlDB.Close()
+	}
 
 	if redisClient != nil {
 		redisClient.Close()
@@ -193,6 +200,19 @@ func main() {
 }
 
 func getAllowedOrigins() []string {
+	corsOrigin := config.GetEnv("CORS_ORIGIN", "")
+	if corsOrigin != "" {
+		// Parse comma-separated list
+		origins := []string{}
+		for _, origin := range splitAndTrim(corsOrigin, ",") {
+			if origin != "" {
+				origins = append(origins, origin)
+			}
+		}
+		return origins
+	}
+
+	// Fallback defaults
 	origins := []string{
 		"https://lmsrocket.com",
 		"https://www.lmsrocket.com",
@@ -204,4 +224,43 @@ func getAllowedOrigins() []string {
 	}
 
 	return origins
+}
+
+func splitAndTrim(s, sep string) []string {
+	var result []string
+	for _, item := range splitString(s, sep) {
+		trimmed := trimSpace(item)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func splitString(s, sep string) []string {
+	if s == "" {
+		return []string{}
+	}
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i:i+1] == sep {
+			result = append(result, s[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+func trimSpace(s string) string {
+	start := 0
+	for start < len(s) && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
+		start++
+	}
+	end := len(s)
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
+		end--
+	}
+	return s[start:end]
 }

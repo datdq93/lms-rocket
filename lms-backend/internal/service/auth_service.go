@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/lms-rocket/lms-backend/internal/config"
 	"github.com/lms-rocket/lms-backend/internal/domain"
 	"github.com/lms-rocket/lms-backend/internal/repository"
 )
@@ -27,13 +27,17 @@ type AuthService interface {
 type authService struct {
 	userRepo    repository.UserRepository
 	redisClient *redis.Client
+	jwtConfig   *config.JWTConfig
+	bcryptCost  int
 }
 
 // NewAuthService creates a new auth service
-func NewAuthService(userRepo repository.UserRepository, redisClient *redis.Client) AuthService {
+func NewAuthService(userRepo repository.UserRepository, redisClient *redis.Client, jwtConfig *config.JWTConfig) AuthService {
 	return &authService{
 		userRepo:    userRepo,
 		redisClient: redisClient,
+		jwtConfig:   jwtConfig,
+		bcryptCost:  config.GetEnvInt("BCRYPT_COST", 12),
 	}
 }
 
@@ -45,7 +49,7 @@ func (s *authService) Register(email, password, name, role string) (*domain.User
 	}
 
 	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), s.bcryptCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -107,30 +111,30 @@ func (s *authService) Logout(userID string) error {
 }
 
 func (s *authService) GenerateTokens(user *domain.User) (string, string, error) {
-	// Access token - 15 minutes
+	// Access token
 	accessClaims := jwt.MapClaims{
 		"sub":   user.ID,
 		"email": user.Email,
 		"role":  user.Role,
 		"iat":   time.Now().Unix(),
-		"exp":   time.Now().Add(15 * time.Minute).Unix(),
+		"exp":   time.Now().Add(s.jwtConfig.AccessExpiry).Unix(),
 		"type":  "access",
 	}
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-	accessString, err := accessToken.SignedString([]byte(os.Getenv("JWT_SECRET_KEY")))
+	accessString, err := accessToken.SignedString([]byte(s.jwtConfig.SecretKey))
 	if err != nil {
 		return "", "", err
 	}
 
-	// Refresh token - 7 days
+	// Refresh token
 	refreshClaims := jwt.MapClaims{
 		"sub":  user.ID,
 		"iat":  time.Now().Unix(),
-		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"exp":  time.Now().Add(s.jwtConfig.RefreshExpiry).Unix(),
 		"type": "refresh",
 	}
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshString, err := refreshToken.SignedString([]byte(os.Getenv("JWT_REFRESH_SECRET")))
+	refreshString, err := refreshToken.SignedString([]byte(s.jwtConfig.RefreshSecretKey))
 	if err != nil {
 		return "", "", err
 	}
@@ -139,7 +143,7 @@ func (s *authService) GenerateTokens(user *domain.User) (string, string, error) 
 	if s.redisClient != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		s.redisClient.Set(ctx, "refresh:"+user.ID, refreshString, 7*24*time.Hour)
+		s.redisClient.Set(ctx, "refresh:"+user.ID, refreshString, s.jwtConfig.RefreshExpiry)
 	}
 
 	return accessString, refreshString, nil
